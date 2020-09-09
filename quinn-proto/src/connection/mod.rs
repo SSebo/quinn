@@ -3214,3 +3214,18 @@ struct PacketBuilder<'a> {
     max_size: usize,
     span: tracing::Span,
 }
+
+/// for using rust 1.41.0, target aarch64-apple-ios
+/// Returns whether the given expression matches any of the given patterns.
+///
+/// Like in a `match` expression, the pattern can be optionally followed by `if`
+/// and a guard expression that has access to names bound by the pattern.
+#[macro_export]
+macro_rules! matches {
+    ($expression:expr, $( $pattern:pat )|+ $( if $guard: expr )?) => {
+        match $expression {
+            $( $pattern )|+ $( if $guard )? => true,
+            _ => false
+        }
+    }
+}

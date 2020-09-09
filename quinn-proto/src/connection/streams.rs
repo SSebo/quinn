@@ -374,7 +374,7 @@ impl Streams {
             None => return Err(UnknownStream { _private: () }),
         };
 
-        if matches!(stream.state, SendState::ResetSent | SendState::ResetRecvd) {
+        if crate::matches!(stream.state, SendState::ResetSent | SendState::ResetRecvd) {
             // Redundant reset call
             return Err(UnknownStream { _private: () });
         }
@@ -557,7 +557,7 @@ impl Streams {
             }
             let offsets = stream.pending.poll_transmit(max_data_len);
             let fin = offsets.end == stream.pending.offset()
-                && matches!(stream.state, SendState::DataSent { .. });
+                && crate::matches!(stream.state, SendState::DataSent { .. });
             if fin {
                 stream.fin_pending = false;
             }
@@ -815,7 +815,7 @@ impl Send {
 
     /// Whether the stream has been reset
     fn is_reset(&self) -> bool {
-        matches!(self.state, SendState::ResetSent { .. } | SendState::ResetRecvd { .. })
+        crate::matches!(self.state, SendState::ResetSent { .. } | SendState::ResetRecvd { .. })
     }
 
     fn finish(&mut self) -> Result<(), FinishError> {
@@ -1054,7 +1054,7 @@ impl Recv {
 
     /// Returns `false` iff the reset was redundant
     fn reset(&mut self, error_code: VarInt, final_offset: u64) -> bool {
-        if matches!(self.state, RecvState::ResetRecvd { .. } | RecvState::Closed) {
+        if crate::matches!(self.state, RecvState::ResetRecvd { .. } | RecvState::Closed) {
             return false;
         }
         self.state = RecvState::ResetRecvd {
