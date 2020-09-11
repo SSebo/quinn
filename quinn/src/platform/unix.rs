@@ -38,7 +38,9 @@ impl super::UdpExt for UdpSocket {
         let addr = self.local_addr()?;
 
         // macos doesn't support IP_RECVTOS on dual-stack sockets :(
-        if addr.is_ipv4() || (!cfg!(target_os = "macos") && !self.only_v6()?) {
+        if addr.is_ipv4()
+            || ((cfg!(not(any(target_os = "macos", target_os = "ios")))) && !self.only_v6()?)
+        {
             let on: libc::c_int = 1;
             let rc = unsafe {
                 libc::setsockopt(
@@ -202,7 +204,7 @@ impl super::UdpExt for UdpSocket {
                 (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => unsafe {
                     // Temporary hack around broken macos ABI. Remove once upstream fixes it.
                     // https://bugreport.apple.com/web/?problemID=48761855
-                    if cfg!(target_os = "macos")
+                    if cfg!(any(target_os = "macos", target_os = "ios"))
                         && cmsg.cmsg_len as usize
                             == libc::CMSG_LEN(mem::size_of::<u8>() as _) as usize
                     {
