@@ -58,8 +58,8 @@ where
         self,
         socket: std::net::UdpSocket,
     ) -> Result<(Endpoint<S>, Incoming<S>), EndpointError> {
-        let addr = socket.local_addr().map_err(EndpointError::Socket)?;
-        let socket = UdpSocket::from_std(socket).map_err(EndpointError::Socket)?;
+        let addr = socket.local_addr().map_err(EndpointError::Socket1)?;
+        let socket = UdpSocket::from_std(socket).map_err(EndpointError::Socket2)?;
         let rc = EndpointRef::new(
             socket,
             proto::generic::Endpoint::new(Arc::new(self.config), self.server_config.map(Arc::new)),
@@ -116,6 +116,12 @@ pub enum EndpointError {
     /// An error during setup of the underlying UDP socket.
     #[error(display = "failed to set up UDP socket: {}", _0)]
     Socket(io::Error),
+    /// An error during setup of the underlying UDP socket.
+    #[error(display = "failed to set up UDP s1cket: {}", _0)]
+    Socket1(io::Error),
+    /// An error during setup of the underlying UDP socket.
+    #[error(display = "failed to set up UDP s2cket: {}", _0)]
+    Socket2(io::Error),
 }
 
 /// Helper for constructing a [`ServerConfig`] to be passed to [`EndpointBuilder::listen()`] to
