@@ -37,9 +37,9 @@ impl super::UdpExt for UdpSocket {
 
         let addr = self.local_addr()?;
 
-        // macos doesn't support IP_RECVTOS on dual-stack sockets :(
+        // macos and ios do not support IP_RECVTOS on dual-stack sockets :(
         if addr.is_ipv4()
-            || ((cfg!(not(any(target_os = "macos", target_os = "ios")))) && !self.only_v6()?)
+            || ((!cfg!(any(target_os = "macos", target_os = "ios"))) && !self.only_v6()?)
         {
             let on: libc::c_int = 1;
             let rc = unsafe {
