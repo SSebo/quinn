@@ -76,6 +76,12 @@ pub use streams::{
 mod timer;
 use timer::{Timer, TimerTable};
 
+#[derive(Debug)]
+enum PathType {
+    Previous,
+    Current,
+}
+
 /// Protocol state and logic for a single QUIC connection
 ///
 /// Objects of this type receive [`ConnectionEvent`]s and emit [`EndpointEvent`]s and application
@@ -387,27 +393,25 @@ where
         }
     }
 
-    /// Returns packets to transmit
-    ///
-    /// Connections should be polled for transmit after:
-    /// - the application performed some I/O on the connection
-    /// - a call was made to `handle_event`
-    /// - a call was made to `handle_timeout`
-    #[must_use]
-    pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit> {
-        // This will become a parameter to `poll_transmit` in an additional update
-        const MAX_DATAGRAMS: usize = 1;
-
-        let mut num_datagrams = 0;
-
-        // Send PATH_CHALLENGE for a previous path if necessary
-        if let Some(ref mut prev_path) = self.prev_path {
-            if prev_path.challenge_pending {
-                prev_path.challenge_pending = false;
-                let token = prev_path
-                    .challenge
-                    .expect("previous path challenge pending without token");
-                let destination = prev_path.remote;
+    fn path_challenge(&mut self, now: Instant, path_type: PathType) -> Option<Transmit> {
+        let mut path = match path_type {
+            PathType::Previous => {
+                if let Some(ref mut path) = self.prev_path {
+                    Some(path)
+                } else {
+                    None
+                }
+            }
+            PathType::Current => Some(&mut self.path),
+        };
+        if let Some(ref mut path) = path {
+            if path.challenge_pending {
+                path.challenge_pending = false;
+                let token = path.challenge.expect(&format!(
+                    "{:?} path challenge pending without token",
+                    path_type
+                ));
+                let destination = path.remote;
                 debug_assert_eq!(
                     self.highest_space,
                     SpaceId::Data,
@@ -418,7 +422,11 @@ where
 
                 let mut builder =
                     PacketBuilder::new(now, SpaceId::Data, &mut buf, buf_capacity, 0, false, self)?;
-                trace!("validating previous path with PATH_CHALLENGE {:08x}", token);
+                trace!(
+                    "validating previous path to {} with PATH_CHALLENGE {:08x}",
+                    destination,
+                    token
+                );
                 buf.write(frame::Type::PATH_CHALLENGE);
                 buf.write(token);
                 self.stats.frame_tx.path_challenge += 1;
@@ -441,6 +449,29 @@ where
                     src_ip: self.local_ip,
                 });
             }
+        }
+        None
+    }
+
+    /// Returns packets to transmit
+    ///
+    /// Connections should be polled for transmit after:
+    /// - the application performed some I/O on the connection
+    /// - a call was made to `handle_event`
+    /// - a call was made to `handle_timeout`
+    #[must_use]
+    pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit> {
+        // This will become a parameter to `poll_transmit` in an additional update
+        const MAX_DATAGRAMS: usize = 1;
+
+        let mut num_datagrams = 0;
+
+        // Send PATH_CHALLENGE for a previous path if necessary
+        if let Some(transmit) = self.path_challenge(now, PathType::Previous) {
+            return Some(transmit);
+        }
+        if let Some(transmit) = self.path_challenge(now, PathType::Current) {
+            return Some(transmit);
         }
 
         // If we need to send a probe, make sure we have something to send.
@@ -2204,7 +2235,7 @@ where
                 }
                 Frame::PathResponse(token) => {
                     if self.path.challenge == Some(token) && remote == self.path.remote {
-                        trace!("new path validated");
+                        trace!("new path validated from {}", remote);
                         self.timers.stop(Timer::PathValidation);
                         self.path.challenge = None;
                         self.path.validated = true;
@@ -2404,6 +2435,7 @@ where
                     .migration,
                 "migration-initiating packets should have been dropped immediately"
             );
+            trace!(%remote, %self.path.remote, "will migrate");
             self.migrate(now, remote);
             // Break linkability, if possible
             let _ = self.update_rem_cid();
@@ -2434,6 +2466,7 @@ where
         let mut prev = mem::replace(&mut self.path, new_path);
         // Don't clobber the original path if the previous one hasn't been validated yet
         if prev.challenge.is_none() {
+            trace!(%remote, "migration prev {:?} new {:?}", prev.remote, self.path.remote);
             prev.challenge = Some(self.rng.gen());
             prev.challenge_pending = true;
             self.prev_path = Some(prev);
@@ -2525,7 +2558,7 @@ where
                 // But only send a packet solely for that purpose at most once
                 self.path.challenge_pending = false;
                 sent.requires_padding = true;
-                trace!("PATH_CHALLENGE {:08x}", token);
+                trace!("PATH_CHALLENGE {:08x} to {}", token, self.path.remote);
                 buf.write(frame::Type::PATH_CHALLENGE);
                 buf.write(token);
                 self.stats.frame_tx.path_challenge += 1;
